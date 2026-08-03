@@ -63,6 +63,68 @@ local function wireformat2array(str)
    return array
 end
 
+--------------------------------------------------------------------------------
+-- System CA auto-detection
+--
+
+-- Module-level cache; nil means "not (yet) populated", false means don't auto detect (always return nil)
+local system_ca
+
+--
+-- Probes for a usable system CA value. Does not touch the cache.
+--
+local find_system_ca do
+
+   -- Known CA bundle locations to probe, in order.
+   local ca_bundle_paths = {
+      "/etc/ssl/certs/ca-certificates.crt",                 -- Debian / Ubuntu / Gentoo
+      "/etc/pki/tls/certs/ca-bundle.crt",                   -- Fedora / RHEL 6
+      "/etc/ssl/ca-bundle.pem",                             -- OpenSUSE
+      "/etc/pki/tls/cacert.pem",                            -- OpenELEC
+      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  -- CentOS / RHEL 7
+      "/etc/ssl/cert.pem",                                  -- OpenBSD / Alpine / macOS
+   }
+
+   local is_windows = package.config:sub(1, 1) == "\\"
+
+   function find_system_ca()
+      if is_windows then
+         return "system"
+      end
+      for _, path in ipairs(ca_bundle_paths) do
+         local fh = io.open(path, "r")
+         if fh then
+            fh:close()
+            return path
+         end
+      end
+      return nil
+   end
+end
+
+
+--
+-- Explicitly sets the cached system CA value.
+--   * a string caches that value
+--   * nil clears the cache, so the next get_system_ca() call re-probes the file list
+--   * false disables discovery, so get_system_ca() always returns nil
+--
+local function set_system_ca(ca)
+   assert(ca == nil or ca == false or type(ca) == "string", "invalid system CA value; nil, false, filename")
+   system_ca = ca
+end
+
+--
+-- Returns the cached system CA value, auto-populating the cache on first call.
+--
+local function get_system_ca()
+   if system_ca == false then return nil end
+   if system_ca == nil then
+      set_system_ca(find_system_ca())
+   end
+   return system_ca
+end
+
 --
 --
 --
@@ -308,6 +370,12 @@ local _M = {
   loadcertificate = x509.load,
   newcontext      = newcontext,
   wrap            = wrap,
+  find_system_ca  = find_system_ca,
+  set_system_ca   = set_system_ca,
+  get_system_ca   = get_system_ca,
 }
+
+-- Warm the system CA cache at load time, rather than on first connection.
+get_system_ca()
 
 return _M
