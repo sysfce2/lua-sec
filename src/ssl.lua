@@ -98,7 +98,7 @@ local find_system_ca do
             return path
          end
       end
-      return nil
+      return nil, "no system CA bundle found:\n\tno file '" .. table.concat(ca_bundle_paths, "'\n\tno file '") .. "'"
    end
 end
 
@@ -107,20 +107,28 @@ end
 -- Explicitly sets the cached system CA value.
 --   * a string caches that value
 --   * nil clears the cache, so the next get_system_ca() call re-probes the file list
---   * false disables discovery, so get_system_ca() always returns nil
+--   * false disables discovery, so get_system_ca() always returns nil + error
 --
 local function set_system_ca(ca)
    assert(ca == nil or ca == false or type(ca) == "string", "invalid system CA value; nil, false, filename")
    system_ca = ca
+   return true
 end
 
 --
--- Returns the cached system CA value, auto-populating the cache on first call.
+-- Returns the cached system CA value, auto-populating the cache on first call, or nil+error
+-- if discovery fails or is disabled.
 --
 local function get_system_ca()
-   if system_ca == false then return nil end
+   if system_ca == false then
+      return nil, "system CA discovery disabled"
+   end
    if system_ca == nil then
-      set_system_ca(find_system_ca())
+      local cafile, err = find_system_ca()
+      if not cafile then
+         return nil, err
+      end
+      set_system_ca(cafile)
    end
    return system_ca
 end
