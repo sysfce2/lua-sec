@@ -481,6 +481,74 @@ static int meth_digest(lua_State* L)
 }
 
 /**
+ * Prepare the X509_check_host() flags.
+ */
+static int set_checkhost_flag(const char *opt, unsigned int *flag)
+{
+  if (!strcmp(opt, "always_check_subject")) {
+    *flag |= X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT;
+  } else if (!strcmp(opt, "no_wildcards")) {
+    *flag |= X509_CHECK_FLAG_NO_WILDCARDS;
+  } else if (!strcmp(opt, "no_partial_wildcards")) {
+    *flag |= X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS;
+  } else if (!strcmp(opt, "multi_label_wildcards")) {
+    *flag |= X509_CHECK_FLAG_MULTI_LABEL_WILDCARDS;
+  } else if (!strcmp(opt, "single_label_subdomains")) {
+    *flag |= X509_CHECK_FLAG_SINGLE_LABEL_SUBDOMAINS;
+#if defined(X509_CHECK_FLAG_NEVER_CHECK_SUBJECT)
+  } else if (!strcmp(opt, "never_check_subject")) {
+    *flag |= X509_CHECK_FLAG_NEVER_CHECK_SUBJECT;
+#endif
+  } else {
+    return 0;
+  }
+  return 1;
+}
+
+/**
+ * Check if the certificate matches the given hostname (RFC 6125).
+ *
+ * This is a manual, standalone check (wraps X509_check_host() directly) and
+ * is not aware of DANE. On a DANE-EE connection a certificate may legitimately
+ * not match the hostname, so this function must not be used as a substitute
+ * for the connection's own peer verification in that case. OpenSSL recommends
+ * X509_VERIFY_PARAM_set1_host() (via SSL_set1_host()) for that purpose, since
+ * it cooperates with DANE's internal suppression of the hostname check; this
+ * function is for one-off checks against an arbitrary certificate instead.
+ */
+static int meth_checkhost(lua_State* L)
+{
+  int i, max;
+  size_t len;
+  int ret;
+  const char *opt;
+  unsigned int flags = 0;
+  X509 *cert = lsec_checkx509(L, 1);
+  const char *name = luaL_checklstring(L, 2, &len);
+
+  max = lua_gettop(L);
+  for (i = 3; i <= max; i++) {
+    opt = luaL_checkstring(L, i);
+    if (!set_checkhost_flag(opt, &flags)) {
+      lua_pushnil(L);
+      lua_pushfstring(L, "invalid checkhost option (%s)", opt);
+      return 2;
+    }
+  }
+
+  ret = X509_check_host(cert, name, len, flags, NULL);
+  if (ret < 0) {
+    const char *reason = ERR_reason_error_string(ERR_get_error());
+    lua_pushnil(L);
+    lua_pushfstring(L, "error checking hostname (%s)",
+      reason ? reason : (ret == -2 ? "malformed name" : "internal error"));
+    return 2;
+  }
+  lua_pushboolean(L, ret);
+  return 1;
+}
+
+/**
  * Check if the certificate is valid in a given time.
  */
 static int meth_valid_at(lua_State* L)
@@ -697,6 +765,7 @@ static int load_cert(lua_State* L)
  * Certificate methods.
  */
 static luaL_Reg methods[] = {
+  {"checkhost",  meth_checkhost},
   {"digest",     meth_digest},
   {"setencode",  meth_set_encode},
   {"extensions", meth_extensions},
