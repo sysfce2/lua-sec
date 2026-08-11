@@ -210,7 +210,7 @@ local function newcontext(cfg)
       end
       context.setdhparam(ctx, cfg.dhparam)
    end
-   
+
    -- Set elliptic curves
    if (not config.algorithms.ec) and (cfg.curve or cfg.curveslist) then
      return false, "elliptic curves not supported"
@@ -313,8 +313,13 @@ end
 --
 --
 local function wrap(sock, cfg)
-   local ctx, msg
+   local ctx, msg, host, hostflags
    if type(cfg) == "table" then
+      host, hostflags = cfg.host, cfg.hostflags
+      if host and cfg.dane then
+         return nil, "cfg.host must not be combined with cfg.dane; " ..
+            "DANE clients must set the peer hostname via conn:setdane(host) instead"
+      end
       ctx, msg = newcontext(cfg)
       if not ctx then return nil, msg end
    else
@@ -325,9 +330,16 @@ local function wrap(sock, cfg)
       core.setfd(s, sock:getfd())
       sock:setfd(core.SOCKET_INVALID)
       registry[s] = ctx
+      if host then
+         local succ, err = optexec(s.sethostflags, hostflags, s)
+         if succ then
+            succ, err = s:sethost(host)
+         end
+         if not succ then return nil, err end
+      end
       return s
    end
-   return nil, msg 
+   return nil, msg
 end
 
 --

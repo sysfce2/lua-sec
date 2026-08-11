@@ -483,7 +483,7 @@ static int meth_digest(lua_State* L)
 /**
  * Prepare the X509_check_host() flags.
  */
-static int set_checkhost_flag(const char *opt, unsigned int *flag)
+int lsec_set_checkhost_flag(const char *opt, unsigned int *flag)
 {
   if (!strcmp(opt, "always_check_subject")) {
     *flag |= X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT;
@@ -529,7 +529,7 @@ static int meth_checkhost(lua_State* L)
   max = lua_gettop(L);
   for (i = 3; i <= max; i++) {
     opt = luaL_checkstring(L, i);
-    if (!set_checkhost_flag(opt, &flags)) {
+    if (!lsec_set_checkhost_flag(opt, &flags)) {
       lua_pushnil(L);
       lua_pushfstring(L, "invalid checkhost option (%s)", opt);
       return 2;
