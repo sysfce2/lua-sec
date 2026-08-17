@@ -25,6 +25,7 @@ typedef t_x509* p_x509;
 
 void  lsec_pushx509(lua_State* L, X509* cert);
 X509* lsec_checkx509(lua_State* L, int idx);
+int   lsec_set_checkhost_flag(const char *opt, unsigned int *flag);
 
 LSEC_API int luaopen_ssl_x509(lua_State *L);
 

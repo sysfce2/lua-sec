@@ -983,6 +983,66 @@ static int meth_tlsa(lua_State *L)
 }
 #endif
 
+/**
+ * Set the expected peer hostname for automatic verification (RFC 6125).
+ *
+ * Unlike x509:checkhost(), this wraps SSL_set1_host() (X509_VERIFY_PARAM_set1_host()),
+ * so the hostname check happens as part of the connection's own certificate
+ * verification during the handshake, and is correctly suppressed by OpenSSL
+ * when DANE-EE applies. Must be called before dohandshake(). Do not combine
+ * with DANE (SSL_set1_host()'s own docs say DANE clients should leave the
+ * primary reference identifier to setdane() instead).
+ */
+static int meth_sethost(lua_State *L)
+{
+  int ret;
+  size_t len;
+  p_ssl ssl = (p_ssl)luaL_checkudata(L, 1, "SSL:Connection");
+  const char *name = luaL_checklstring(L, 2, &len);
+
+  if (len != strlen(name)) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "malformed hostname (embedded NUL)");
+    return 2;
+  }
+
+  ERR_clear_error();
+  ret = SSL_set1_host(ssl->ssl, name);
+  if (ret <= 0) {
+    const char *reason = ERR_reason_error_string(ERR_get_error());
+    lua_pushnil(L);
+    lua_pushfstring(L, "error setting hostname (%s)", reason ? reason : "internal error");
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
+/**
+ * Set the X509_check_host() flags used by the automatic hostname check
+ * configured via sethost(). Accepts the same option names as x509:checkhost().
+ */
+static int meth_sethostflags(lua_State *L)
+{
+  int i, max;
+  const char *opt;
+  unsigned int flags = 0;
+  p_ssl ssl = (p_ssl)luaL_checkudata(L, 1, "SSL:Connection");
+
+  max = lua_gettop(L);
+  for (i = 2; i <= max; i++) {
+    opt = luaL_checkstring(L, i);
+    if (!lsec_set_checkhost_flag(opt, &flags)) {
+      lua_pushnil(L);
+      lua_pushfstring(L, "invalid checkhost option (%s)", opt);
+      return 2;
+    }
+  }
+  SSL_set_hostflags(ssl->ssl, flags);
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 /*---------------------------------------------------------------------------*/
 
 /**
@@ -1008,6 +1068,8 @@ static luaL_Reg methods[] = {
   {"receive",             meth_receive},
   {"send",                meth_send},
   {"settimeout",          meth_settimeout},
+  {"sethost",             meth_sethost},
+  {"sethostflags",        meth_sethostflags},
   {"sni",                 meth_sni},
   {"want",                meth_want},
 #if defined(LSEC_ENABLE_DANE)
